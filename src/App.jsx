@@ -3,7 +3,7 @@ import { io } from "socket.io-client";
 import './index.css'
 
 
-const socket = io("http://localhost:3001");
+const socket = io("https://chating-pink.vercel.app/");
 
 const App = () => {
   const [message, setMessage] = useState("");

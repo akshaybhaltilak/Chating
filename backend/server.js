@@ -14,6 +14,11 @@ const io = new Server(server, {
   },
 });
 
+// Add a default route to show a message in the browser
+app.get("/", (req, res) => {
+  res.send("Hello, welcome to the backend!");
+});
+
 io.on("connection", (socket) => {
   console.log("A user connected:", socket.id);
 
@@ -28,4 +33,5 @@ io.on("connection", (socket) => {
 
 server.listen(3001, () => {
   console.log("Server is running on http://localhost:3001");
+  console.log("Hello, welcome to backend"); // Added line
 });

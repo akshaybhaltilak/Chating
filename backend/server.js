@@ -40,7 +40,6 @@
 //   console.log(`Server is running on http://localhost:${PORT}`);
 // });
 
-
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -75,6 +74,16 @@ io.on("connection", (socket) => {
     io.emit("receive_message", data);
   });
 
+  // Listen for clear_chat event to clear all messages
+  socket.on("clear_chat", () => {
+    // Clear the messages array
+    messages = [];
+
+    // Broadcast the cleared chat history to all connected clients
+    io.emit("chat_history", []);
+    console.log("Chat history cleared by", socket.id);
+  });
+
   // Handle disconnection
   socket.on("disconnect", () => {
     console.log("A user disconnected:", socket.id);
@@ -86,4 +95,5 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+
 

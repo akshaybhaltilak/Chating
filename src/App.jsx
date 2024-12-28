@@ -9,14 +9,14 @@ const App = () => {
   const [messages, setMessages] = useState([]);
 
   useEffect(() => {
-    // Load messages from localStorage
+    // Load messages from localStorage only once when the component mounts
     const storedMessages = JSON.parse(localStorage.getItem("messages")) || [];
     setMessages(storedMessages);
 
     socket.on("receive_message", (data) => {
       const newMessages = [...messages, data];
       setMessages(newMessages);
-      // Update localStorage
+      // Update localStorage with the new message
       localStorage.setItem("messages", JSON.stringify(newMessages));
     });
 
@@ -33,16 +33,17 @@ const App = () => {
       socket.emit("send_message", msgData);
       const newMessages = [...messages, msgData];
       setMessages(newMessages);
-      // Update localStorage
+      // Update localStorage with the new message
       localStorage.setItem("messages", JSON.stringify(newMessages));
       setMessage("");
     }
   };
 
   const clearChat = () => {
-    // Clear messages from local storage and state
-    setMessages([]);
+    // This will clear only the messages from local storage
+    // Change to clear "Chat" on your own terms in your application, if needed
     localStorage.removeItem("messages");
+    setMessages([]); // Clear state
   };
 
   return (

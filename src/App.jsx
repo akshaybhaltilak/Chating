@@ -14,6 +14,13 @@ const App = () => {
     const storedMessages = JSON.parse(localStorage.getItem("messages")) || [];
     setMessages(storedMessages);
 
+    // Listen for incoming chat history
+    socket.on("chat_history", (history) => {
+      setMessages(history);
+      // Save chat history to localStorage
+      localStorage.setItem("messages", JSON.stringify(history));
+    });
+
     // Listen for incoming messages
     socket.on("receive_message", (data) => {
       setMessages((prevMessages) => {
@@ -24,8 +31,11 @@ const App = () => {
       });
     });
 
-    // Clean up the socket listener on component unmount
-    return () => socket.off("receive_message");
+    // Clean up the socket listeners on component unmount
+    return () => {
+      socket.off("chat_history");
+      socket.off("receive_message");
+    };
   }, []);
 
   const sendMessage = () => {

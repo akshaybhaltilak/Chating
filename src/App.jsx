@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { io } from "socket.io-client";
 import './index.css';
 
+// Connect to the socket.io server
 const socket = io("https://chating-backend.onrender.com");
 
 const App = () => {
@@ -9,17 +10,21 @@ const App = () => {
   const [messages, setMessages] = useState([]);
 
   useEffect(() => {
-    // Load messages from localStorage only once when the component mounts
+    // Load messages from localStorage when the component mounts
     const storedMessages = JSON.parse(localStorage.getItem("messages")) || [];
     setMessages(storedMessages);
 
+    // Listen for incoming messages
     socket.on("receive_message", (data) => {
-      const newMessages = [...messages, data];
-      setMessages(newMessages);
-      // Update localStorage with the new message
-      localStorage.setItem("messages", JSON.stringify(newMessages));
+      setMessages((prevMessages) => {
+        const updatedMessages = [...prevMessages, data];
+        // Update localStorage
+        localStorage.setItem("messages", JSON.stringify(updatedMessages));
+        return updatedMessages;
+      });
     });
 
+    // Clean up the socket listener on component unmount
     return () => socket.off("receive_message");
   }, []);
 
@@ -30,20 +35,24 @@ const App = () => {
         id: socket.id,
         time: new Date().toLocaleTimeString(),
       };
+      // Send the message to the server
       socket.emit("send_message", msgData);
-      const newMessages = [...messages, msgData];
-      setMessages(newMessages);
-      // Update localStorage with the new message
-      localStorage.setItem("messages", JSON.stringify(newMessages));
+      // Update the messages locally
+      setMessages((prevMessages) => {
+        const updatedMessages = [...prevMessages, msgData];
+        // Save to localStorage
+        localStorage.setItem("messages", JSON.stringify(updatedMessages));
+        return updatedMessages;
+      });
+      // Clear the input field
       setMessage("");
     }
   };
 
   const clearChat = () => {
-    // This will clear only the messages from local storage
-    // Change to clear "Chat" on your own terms in your application, if needed
+    // Clear messages from local storage and state
+    setMessages([]);
     localStorage.removeItem("messages");
-    setMessages([]); // Clear state
   };
 
   return (
@@ -76,7 +85,9 @@ const App = () => {
               </div>
             ))
           ) : (
-            <p className="text-gray-400 text-center">No messages yet. Be the first to say hi! 😊</p>
+            <p className="text-gray-400 text-center">
+              No messages yet. Be the first to say hi! 😊
+            </p>
           )}
         </div>
 

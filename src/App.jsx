@@ -9,8 +9,15 @@ const App = () => {
   const [messages, setMessages] = useState([]);
 
   useEffect(() => {
+    // Load messages from localStorage
+    const storedMessages = JSON.parse(localStorage.getItem("messages")) || [];
+    setMessages(storedMessages);
+
     socket.on("receive_message", (data) => {
-      setMessages((prev) => [...prev, data]);
+      const newMessages = [...messages, data];
+      setMessages(newMessages);
+      // Update localStorage
+      localStorage.setItem("messages", JSON.stringify(newMessages));
     });
 
     return () => socket.off("receive_message");
@@ -24,9 +31,18 @@ const App = () => {
         time: new Date().toLocaleTimeString(),
       };
       socket.emit("send_message", msgData);
-      setMessages((prev) => [...prev, msgData]);
+      const newMessages = [...messages, msgData];
+      setMessages(newMessages);
+      // Update localStorage
+      localStorage.setItem("messages", JSON.stringify(newMessages));
       setMessage("");
     }
+  };
+
+  const clearChat = () => {
+    // Clear messages from local storage and state
+    setMessages([]);
+    localStorage.removeItem("messages");
   };
 
   return (
@@ -79,6 +95,14 @@ const App = () => {
             Send
           </button>
         </div>
+
+        {/* Clear Chat Button */}
+        <button
+          className="mt-4 px-6 py-2 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition duration-200"
+          onClick={clearChat}
+        >
+          Clear Chat
+        </button>
       </div>
     </div>
   );

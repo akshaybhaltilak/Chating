@@ -10,14 +10,13 @@ const App = () => {
   const [messages, setMessages] = useState([]);
 
   useEffect(() => {
-    // Load messages from localStorage when the component mounts
+    // Load messages from localStorage on component mount
     const storedMessages = JSON.parse(localStorage.getItem("messages")) || [];
     setMessages(storedMessages);
 
-    // Listen for incoming chat history
+    // Listen for chat history from the server
     socket.on("chat_history", (history) => {
       setMessages(history);
-      // Save chat history to localStorage
       localStorage.setItem("messages", JSON.stringify(history));
     });
 
@@ -25,13 +24,11 @@ const App = () => {
     socket.on("receive_message", (data) => {
       setMessages((prevMessages) => {
         const updatedMessages = [...prevMessages, data];
-        // Update localStorage
         localStorage.setItem("messages", JSON.stringify(updatedMessages));
         return updatedMessages;
       });
     });
 
-    // Clean up the socket listeners on component unmount
     return () => {
       socket.off("chat_history");
       socket.off("receive_message");
@@ -47,22 +44,15 @@ const App = () => {
       };
       // Send the message to the server
       socket.emit("send_message", msgData);
-      // Update the messages locally
-      setMessages((prevMessages) => {
-        const updatedMessages = [...prevMessages, msgData];
-        // Save to localStorage
-        localStorage.setItem("messages", JSON.stringify(updatedMessages));
-        return updatedMessages;
-      });
-      // Clear the input field
-      setMessage("");
+      setMessage(""); // Clear input field after sending
     }
   };
 
   const clearChat = () => {
-    // Clear messages from local storage and state
+    // Clear messages locally and on the server
     setMessages([]);
     localStorage.removeItem("messages");
+    socket.emit("clear_chat"); // Tell the server to clear the chat history
   };
 
   return (

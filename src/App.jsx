@@ -122,8 +122,6 @@
 
 // export default App;
 
-
-
 import React, { useState, useEffect } from "react";
 import { io } from "socket.io-client";
 import "./index.css";
@@ -131,16 +129,55 @@ import "./index.css";
 // Connect to the socket.io server
 const socket = io("https://chating-backend.onrender.com");
 
-const App = () => {
+// Predefined chat code for login
+const CHAT_CODE = "9834153020";
+
+// Login Component
+const Login = ({ onLogin }) => {
+  const [inputCode, setInputCode] = useState("");
+
+  const handleLogin = () => {
+    if (inputCode === CHAT_CODE) {
+      onLogin();
+    } else {
+      alert("Incorrect code! Please try again.");
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-r from-purple-400 to-pink-300">
+      <div className="w-full max-w-md bg-white shadow-xl rounded-lg p-6">
+        <h1 className="text-xl sm:text-2xl font-bold text-purple-600 text-center mb-4">
+          🔐 Secure Chat Login
+        </h1>
+        <p className="text-center text-gray-600 italic mb-6">
+          "Enter the secret code to join the chat."
+        </p>
+
+        <input
+          type="text"
+          placeholder="Enter secret code"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 mb-4"
+          value={inputCode}
+          onChange={(e) => setInputCode(e.target.value)}
+        />
+        <button
+          className="w-full px-4 py-2 bg-purple-500 text-white font-bold rounded-lg hover:bg-purple-600 transition duration-200"
+          onClick={handleLogin}
+        >
+          Login
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Chat App Component
+const ChatApp = () => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
 
   useEffect(() => {
-    // Request notification permissions on app load
-    if (Notification.permission !== "granted") {
-      Notification.requestPermission();
-    }
-
     // Load messages from localStorage on component mount
     const storedMessages = JSON.parse(localStorage.getItem("messages")) || [];
     setMessages(storedMessages);
@@ -158,13 +195,6 @@ const App = () => {
         localStorage.setItem("messages", JSON.stringify(updatedMessages));
         return updatedMessages;
       });
-
-      // Show notification for new message
-      if (Notification.permission === "granted" && data.id !== socket.id) {
-        new Notification("New Message", {
-          body: data.text,
-        });
-      }
     });
 
     return () => {
@@ -258,4 +288,16 @@ const App = () => {
   );
 };
 
+// Main App Component
+const App = () => {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  return isLoggedIn ? (
+    <ChatApp />
+  ) : (
+    <Login onLogin={() => setIsLoggedIn(true)} />
+  );
+};
+
 export default App;
+

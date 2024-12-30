@@ -156,7 +156,7 @@ const Login = ({ onLogin }) => {
 
         <input
           type="text"
-          placeholder="Enter secret code"
+          placeholder="Maza Number Tak Itha"
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 mb-4"
           value={inputCode}
           onChange={(e) => setInputCode(e.target.value)}

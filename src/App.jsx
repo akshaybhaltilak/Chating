@@ -230,7 +230,7 @@ const ChatApp = () => {
           💬 Chat for My Love
         </h1>
         <p className="text-center text-gray-600 italic mb-4">
-          "Sanchu, you're the reason behind my every smile ❤️"
+          "Develop By Akshay Bhaltilak ❤️"
         </p>
 
         {/* Chat Box */}

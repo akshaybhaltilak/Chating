@@ -1,108 +1,184 @@
-import React, { useState, useEffect } from "react";
-import { io } from "socket.io-client";
-import './index.css';
+import React, { useState, useEffect, useRef } from "react";
+import { getDatabase, ref, push, onChildAdded, remove } from "firebase/database";
+import { initializeApp } from "firebase/app";
+import { MessageCircle, Send, Trash2 } from "lucide-react";
 
-const socket = io("https://chating-backend.onrender.com");
+// Firebase Configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyD1-lTZAZ7sSqDeLyYd7J7sJSUHL7lPHbs",
+  authDomain: "chat-app-76979.firebaseapp.com",
+  projectId: "chat-app-76979",
+  storageBucket: "chat-app-76979.firebasestorage.app",
+  messagingSenderId: "509762392994",
+  appId: "1:509762392994:web:a247d9806437d69e7c58fb",
+  databaseURL: "https://chat-app-76979-default-rtdb.firebaseio.com/",
+  measurementId: "G-BTTCJ4HXDJ"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const database = getDatabase(app);
 
 const App = () => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
+  const [userId] = useState(() => `user-${Math.random().toString(36).substr(2, 9)}`);
+  const messagesEndRef = useRef(null);
+  const unsubscribeRef = useRef(null);
+
+  // Scroll to bottom of messages
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   useEffect(() => {
-    // Load messages from localStorage
-    const storedMessages = JSON.parse(localStorage.getItem("messages")) || [];
-    setMessages(storedMessages);
+    const messagesRef = ref(database, "chats");
+    const messageIds = new Set(); // Keep track of processed message IDs
 
-    socket.on("receive_message", (data) => {
-      const newMessages = [...messages, data];
-      setMessages(newMessages);
-      // Update localStorage
-      localStorage.setItem("messages", JSON.stringify(newMessages));
+    // Set up message listener
+    unsubscribeRef.current = onChildAdded(messagesRef, (snapshot) => {
+      const messageId = snapshot.key;
+      // Only add message if we haven't processed it before
+      if (!messageIds.has(messageId)) {
+        messageIds.add(messageId);
+        setMessages(prevMessages => [...prevMessages, { id: messageId, ...snapshot.val() }]);
+      }
     });
 
-    return () => socket.off("receive_message");
-  }, []);
+    // Cleanup function
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+    };
+  }, []); // Empty dependency array - only run once on mount
 
-  const sendMessage = () => {
+  // Scroll to bottom whenever messages change
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const sendMessage = async () => {
     if (message.trim()) {
-      const msgData = {
-        text: message,
-        id: socket.id,
-        time: new Date().toLocaleTimeString(),
-      };
-      socket.emit("send_message", msgData);
-      const newMessages = [...messages, msgData];
-      setMessages(newMessages);
-      // Update localStorage
-      localStorage.setItem("messages", JSON.stringify(newMessages));
-      setMessage("");
+      try {
+        const msgData = {
+          text: message.trim(),
+          time: new Date().toLocaleTimeString(),
+          userId: userId,
+          sender: "Sanchu",
+          timestamp: Date.now() // Add timestamp for ordering
+        };
+
+        // Push message to Firebase and wait for completion
+        await push(ref(database, "chats"), msgData);
+        setMessage(""); // Clear input only after successful send
+      } catch (error) {
+        console.error("Error sending message:", error);
+        // Optionally add error handling UI here
+      }
     }
   };
 
-  const clearChat = () => {
-    // Clear messages from local storage and state
-    setMessages([]);
-    localStorage.removeItem("messages");
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
+  const clearChat = async () => {
+    try {
+      await remove(ref(database, "chats"));
+      setMessages([]); // Clear local messages
+    } catch (error) {
+      console.error("Error clearing chat:", error);
+    }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-r from-orange-400 to-white">
-      <div className="w-full max-w-md bg-white shadow-xl rounded-lg p-4 sm:p-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-orange-600 mb-2 text-center">
-          💬 Chat for My Love
-        </h1>
-        <p className="text-center text-gray-600 italic mb-4">
-          "Sanchu, you're the reason behind my every smile ❤️"
-        </p>
-
-        {/* Chat Box */}
-        <div className="h-60 sm:h-64 overflow-y-auto p-4 bg-gray-100 rounded-lg shadow-inner">
-          {messages.length > 0 ? (
-            messages.map((msg, idx) => (
-              <div
-                key={idx}
-                className={`p-3 my-2 rounded-lg ${
-                  msg.id === socket.id
-                    ? "bg-orange-500 text-white self-end"
-                    : "bg-gray-300 text-gray-800"
-                }`}
-              >
-                <span className="block text-sm font-medium">
-                  {msg.id === socket.id ? "You" : "User"}
-                </span>
-                <p>{msg.text}</p>
-                <span className="block text-xs text-gray-400">{msg.time}</span>
-              </div>
-            ))
-          ) : (
-            <p className="text-gray-400 text-center">No messages yet. Be the first to say hi! 😊</p>
-          )}
-        </div>
-
-        {/* Input Section */}
-        <div className="mt-4 flex flex-col sm:flex-row">
-          <input
-            type="text"
-            placeholder="Type your message..."
-            className="flex-grow px-4 py-2 border border-gray-300 rounded-lg sm:rounded-l-lg sm:rounded-none focus:outline-none focus:ring-2 focus:ring-orange-400 mb-2 sm:mb-0"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-          />
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-orange-400 via-pink-200 to-white p-4">
+      <div className="w-full max-w-lg bg-white shadow-2xl rounded-xl overflow-hidden">
+        {/* Header */}
+        <div className="bg-orange-500 p-4 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <MessageCircle className="text-white" size={24} />
+            <h1 className="text-2xl font-bold text-white">Chat for My Love</h1>
+          </div>
           <button
-            className="px-6 py-2 bg-orange-500 text-white font-bold rounded-lg sm:rounded-r-lg hover:bg-orange-600 transition duration-200"
-            onClick={sendMessage}
+            onClick={clearChat}
+            className="p-2 hover:bg-orange-600 rounded-full transition-colors"
+            title="Clear chat"
           >
-            Send
+            <Trash2 className="text-white" size={20} />
           </button>
         </div>
 
-        {/* Clear Chat Button */}
-        <button
-          className="mt-4 px-6 py-2 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition duration-200"
-          onClick={clearChat}
-        >
-          Clear Chat
-        </button>
+        {/* Love Quote */}
+        <div className="bg-pink-50 p-3 text-center border-b">
+          <p className="text-gray-600 italic">
+            "Sanchu, you're the reason behind my every smile ❤️"
+          </p>
+        </div>
+
+        {/* Chat Box */}
+        <div className="h-96 overflow-y-auto p-4 bg-gray-50">
+          {messages.length > 0 ? (
+            messages
+              .sort((a, b) => a.timestamp - b.timestamp) // Sort messages by timestamp
+              .map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`flex ${msg.userId === userId ? 'justify-end' : 'justify-start'} mb-4`}
+                >
+                  <div
+                    className={`max-w-[70%] rounded-xl p-3 ${
+                      msg.userId === userId
+                        ? 'bg-orange-500 text-white rounded-br-none'
+                        : 'bg-gray-200 text-gray-800 rounded-bl-none'
+                    }`}
+                  >
+                    <div className="font-medium text-sm mb-1">
+                      {msg.userId === userId ? 'You' : msg.sender}
+                    </div>
+                    <p className="break-words">{msg.text}</p>
+                    <div className={`text-xs mt-1 ${
+                      msg.userId === userId ? 'text-orange-100' : 'text-gray-500'
+                    }`}>
+                      {msg.time}
+                    </div>
+                  </div>
+                </div>
+              ))
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-gray-400 text-center">
+                No messages yet. Be the first to say hi! 😊
+              </p>
+            </div>
+          )}
+          <div ref={messagesEndRef} /> {/* Scroll anchor */}
+        </div>
+
+        {/* Input Section */}
+        <div className="p-4 bg-white border-t">
+          <div className="flex space-x-2">
+            <textarea
+              rows="1"
+              placeholder="Type your message..."
+              className="flex-grow px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyPress={handleKeyPress}
+            />
+            <button
+              className="px-4 py-2 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition duration-200 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={sendMessage}
+              disabled={!message.trim()}
+            >
+              <Send size={20} />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

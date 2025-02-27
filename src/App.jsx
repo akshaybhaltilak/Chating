@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { 
-  getDatabase, ref, push, onChildAdded, get, set, query, orderByChild, equalTo 
+  getDatabase, ref, push, onChildAdded, get, set, query, orderByChild, equalTo, onValue, update, remove 
 } from "firebase/database";
 import { 
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut 
 } from "firebase/auth";
 import { initializeApp } from "firebase/app";
-import { MessageCircle, Send, Moon, Sun, UserCircle, LogOut, Mail } from "lucide-react";
+import { MessageCircle, Send, Moon, Sun, UserCircle, LogOut, Users, Check, X, Menu, ArrowLeft } from "lucide-react";
 
 // Firebase Configuration
 const firebaseConfig = {
@@ -39,8 +39,11 @@ const App = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [activeChat, setActiveChat] = useState(null);
   const [contacts, setContacts] = useState([]);
-  const [searchEmail, setSearchEmail] = useState("");
-  const [showSearch, setShowSearch] = useState(false);
+  const [usersList, setUsersList] = useState([]);
+  const [showUsersList, setShowUsersList] = useState(false);
+  const [requestsList, setRequestsList] = useState([]);
+  const [showRequests, setShowRequests] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
   
   const messagesEndRef = useRef(null);
   const theme = darkMode ? "dark" : "light";
@@ -59,6 +62,8 @@ const App = () => {
           });
         // Load contacts
         loadContacts(currentUser.uid);
+        // Listen for requests
+        listenForRequests(currentUser.uid);
       } else {
         setUser(null);
         setActiveChat(null);
@@ -67,6 +72,55 @@ const App = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  // Load users
+  const loadUsers = async () => {
+    if (!user) return;
+    
+    try {
+      const usersRef = ref(database, 'users');
+      const snapshot = await get(usersRef);
+      
+      if (snapshot.exists()) {
+        const usersArray = [];
+        snapshot.forEach((childSnapshot) => {
+          const userId = childSnapshot.key;
+          const userData = childSnapshot.val();
+          
+          // Don't include current user
+          if (userId !== user.uid) {
+            usersArray.push({
+              id: userId,
+              ...userData
+            });
+          }
+        });
+        setUsersList(usersArray);
+      }
+    } catch (error) {
+      console.error("Error loading users:", error);
+    }
+  };
+
+  // Listen for friend requests
+  const listenForRequests = (userId) => {
+    const requestsRef = ref(database, `requests/${userId}`);
+    
+    onValue(requestsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const requestsArray = [];
+        snapshot.forEach((childSnapshot) => {
+          requestsArray.push({
+            id: childSnapshot.key,
+            ...childSnapshot.val()
+          });
+        });
+        setRequestsList(requestsArray);
+      } else {
+        setRequestsList([]);
+      }
+    });
+  };
 
   // Scroll to bottom when messages update
   useEffect(() => {
@@ -77,23 +131,30 @@ const App = () => {
   useEffect(() => {
     if (activeChat) {
       loadMessages(activeChat.chatId);
+      // Hide sidebar on mobile when chat is active
+      if (window.innerWidth < 768) {
+        setShowSidebar(false);
+      }
     }
   }, [activeChat]);
 
   const loadContacts = async (userId) => {
     try {
       const contactsRef = ref(database, `userChats/${userId}`);
-      const snapshot = await get(contactsRef);
-      if (snapshot.exists()) {
-        const contactsList = [];
-        snapshot.forEach((childSnapshot) => {
-          contactsList.push({
-            id: childSnapshot.key,
-            ...childSnapshot.val()
+      onValue(contactsRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const contactsList = [];
+          snapshot.forEach((childSnapshot) => {
+            contactsList.push({
+              id: childSnapshot.key,
+              ...childSnapshot.val()
+            });
           });
-        });
-        setContacts(contactsList);
-      }
+          setContacts(contactsList);
+        } else {
+          setContacts([]);
+        }
+      });
     } catch (error) {
       console.error("Error loading contacts:", error);
     }
@@ -143,81 +204,54 @@ const App = () => {
     }
   };
 
-  const handleSearchUser = async () => {
-    if (!searchEmail.trim() || searchEmail === user.email) return;
-    
+  const sendFriendRequest = async (targetUserId) => {
     try {
-      const usersRef = ref(database, "users");
-      const emailQuery = query(usersRef, orderByChild("email"), equalTo(searchEmail));
-      const snapshot = await get(emailQuery);
+      await set(ref(database, `requests/${targetUserId}/${user.uid}`), {
+        senderId: user.uid,
+        senderName: displayName || user.email.split('@')[0],
+        senderEmail: user.email,
+        status: 'pending',
+        timestamp: Date.now()
+      });
       
-      if (snapshot.exists()) {
-        const userData = Object.entries(snapshot.val())[0];
-        const userId = userData[0];
-        const userInfo = userData[1];
-        
-        // Check if chat already exists
-        const userChatsRef = ref(database, `userChats/${user.uid}`);
-        const userChatsSnapshot = await get(userChatsRef);
-        
-        let existingChatId = null;
-        
-        if (userChatsSnapshot.exists()) {
-          Object.entries(userChatsSnapshot.val()).forEach(([key, chat]) => {
-            if (chat.userId === userId) {
-              existingChatId = chat.chatId;
-            }
-          });
-        }
-        
-        if (existingChatId) {
-          // Chat exists, open it
-          setActiveChat({
-            chatId: existingChatId,
-            displayName: userInfo.displayName,
-            userId
-          });
-        } else {
-          // Create new chat
-          const newChatId = Date.now().toString();
-          
-          // Add to current user's chats
-          await set(ref(database, `userChats/${user.uid}/${userId}`), {
-            userId,
-            displayName: userInfo.displayName,
-            chatId: newChatId,
-            timestamp: Date.now()
-          });
-          
-          // Add to other user's chats
-          await set(ref(database, `userChats/${userId}/${user.uid}`), {
-            userId: user.uid,
-            displayName: displayName || user.email.split('@')[0],
-            chatId: newChatId,
-            timestamp: Date.now()
-          });
-          
-          // Open the new chat
-          setActiveChat({
-            chatId: newChatId,
-            displayName: userInfo.displayName,
-            userId
-          });
-          
-          // Refresh contacts
-          loadContacts(user.uid);
-        }
-        
-        setSearchEmail("");
-        setShowSearch(false);
-      } else {
-        setErrorMsg("User not found");
-        setTimeout(() => setErrorMsg(""), 3000);
-      }
+      setShowUsersList(false);
+      showNotification("Friend request sent");
     } catch (error) {
-      console.error("Error searching for user:", error);
-      setErrorMsg("Error searching for user");
-      setTimeout(() => setErrorMsg(""), 3000);
+      console.error("Error sending friend request:", error);
+    }
+  };
+
+  const handleRequestResponse = async (requestId, accept) => {
+    try {
+      if (accept) {
+        const requestData = requestsList.find(req => req.id === requestId);
+        
+        // Create chat
+        const newChatId = Date.now().toString();
+        
+        // Add to current user's chats
+        await set(ref(database, `userChats/${user.uid}/${requestId}`), {
+          userId: requestId,
+          displayName: requestData.senderName,
+          chatId: newChatId,
+          timestamp: Date.now()
+        });
+        
+        // Add to requester's chats
+        await set(ref(database, `userChats/${requestId}/${user.uid}`), {
+          userId: user.uid,
+          displayName: displayName || user.email.split('@')[0],
+          chatId: newChatId,
+          timestamp: Date.now()
+        });
+      }
+      
+      // Remove request
+      await remove(ref(database, `requests/${user.uid}/${requestId}`));
+      
+      showNotification(accept ? "Friend request accepted" : "Friend request declined");
+    } catch (error) {
+      console.error("Error handling friend request:", error);
     }
   };
 
@@ -233,6 +267,18 @@ const App = () => {
       };
       
       await push(ref(database, `chats/${activeChat.chatId}/messages`), msgData);
+      
+      // Update last message
+      await update(ref(database, `userChats/${user.uid}/${activeChat.userId}`), {
+        timestamp: Date.now(),
+        lastMessage: message.trim()
+      });
+      
+      await update(ref(database, `userChats/${activeChat.userId}/${user.uid}`), {
+        timestamp: Date.now(),
+        lastMessage: message.trim()
+      });
+      
       setMessage("");
     } catch (error) {
       console.error("Error sending message:", error);
@@ -254,6 +300,11 @@ const App = () => {
     });
   };
 
+  const showNotification = (message) => {
+    setErrorMsg(message);
+    setTimeout(() => setErrorMsg(""), 3000);
+  };
+
   // Helper functions
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
@@ -268,13 +319,9 @@ const App = () => {
   if (!user) {
     return (
       <div className={`flex flex-col items-center justify-center min-h-screen bg-gradient-to-br ${
-        theme === "dark" 
-          ? "from-gray-900 via-purple-900 to-indigo-900 text-white" 
-          : "from-purple-500 via-pink-300 to-white"
+        theme === "dark" ? "from-gray-900 via-purple-900 to-indigo-900 text-white" : "from-purple-500 via-pink-300 to-white"
       } p-4 transition-colors duration-300`}>
-        <div className={`w-full max-w-md p-6 rounded-xl shadow-md ${
-          theme === "dark" ? "bg-gray-800" : "bg-white"
-        }`}>
+        <div className={`w-full max-w-md p-6 rounded-xl shadow-md ${theme === "dark" ? "bg-gray-800" : "bg-white"}`}>
           <div className="flex justify-between items-center mb-6">
             <div className="flex items-center space-x-2">
               <MessageCircle size={24} className="text-purple-500" />
@@ -301,7 +348,7 @@ const App = () => {
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 ${
+                  className={`w-full px-3 py-2 border rounded-lg ${
                     theme === "dark" ? "bg-gray-700 border-gray-600 text-white" : ""
                   }`}
                   placeholder="Your name"
@@ -315,7 +362,7 @@ const App = () => {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 ${
+                className={`w-full px-3 py-2 border rounded-lg ${
                   theme === "dark" ? "bg-gray-700 border-gray-600 text-white" : ""
                 }`}
                 placeholder="example@email.com"
@@ -329,7 +376,7 @@ const App = () => {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 ${
+                className={`w-full px-3 py-2 border rounded-lg ${
                   theme === "dark" ? "bg-gray-700 border-gray-600 text-white" : ""
                 }`}
                 placeholder="••••••••"
@@ -339,7 +386,7 @@ const App = () => {
             
             <button
               type="submit"
-              className="w-full py-2 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition duration-300"
+              className="w-full py-2 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg"
             >
               {isLogin ? "Log In" : "Sign Up"}
             </button>
@@ -360,107 +407,225 @@ const App = () => {
 
   // Main chat app
   return (
-    <div className={`flex flex-col items-center justify-center min-h-screen bg-gradient-to-br ${
-      theme === "dark" 
-        ? "from-gray-900 via-purple-900 to-indigo-900" 
-        : "from-purple-500 via-pink-300 to-white"
-    } p-4 transition-colors duration-300`}>
-      <div className={`w-full max-w-4xl flex h-[600px] rounded-xl overflow-hidden shadow-xl border ${
-        theme === "dark" ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
-      }`}>
-        {/* Sidebar */}
-        <div className={`w-1/3 border-r ${
-          theme === "dark" ? "bg-gray-800 border-gray-700 text-white" : "bg-gray-50 border-gray-200"
+    <div className={`flex flex-col h-screen bg-gradient-to-br ${
+      theme === "dark" ? "from-gray-900 via-purple-900 to-indigo-900" : "from-purple-500 via-pink-300 to-white"
+    } transition-colors duration-300`}>
+      <div className={`flex flex-grow overflow-hidden ${
+        theme === "dark" ? "bg-gray-800 text-white" : "bg-white"
+      } m-0 sm:m-4 rounded-none sm:rounded-xl shadow-xl`}>
+        {/* Mobile header */}
+        <div className={`md:hidden fixed top-0 left-0 right-0 z-10 flex items-center justify-between p-3 border-b ${
+          theme === "dark" ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
         }`}>
-          {/* User profile */}
-          <div className={`p-4 border-b flex justify-between items-center ${
-            theme === "dark" ? "border-gray-700" : "border-gray-200"
-          }`}>
-            <div className="flex items-center space-x-2">
-              <UserCircle size={24} className="text-purple-500" />
-              <span className="font-medium truncate">{displayName || user.email}</span>
+          {activeChat && !showSidebar ? (
+            <button onClick={() => setShowSidebar(true)} className="p-2">
+              <ArrowLeft size={20} />
+            </button>
+          ) : (
+            <div className="flex items-center">
+              <MessageCircle size={20} className="text-purple-500 mr-2" />
+              <span className="font-medium">Chat App</span>
             </div>
-            <div className="flex space-x-2">
-              <button onClick={toggleDarkMode} className="p-2 rounded-full">
-                {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-              </button>
-              <button onClick={handleLogout} className="p-2 rounded-full">
-                <LogOut size={18} />
-              </button>
-            </div>
-          </div>
+          )}
           
-          {/* Search */}
-          <div className="p-3">
-            {showSearch ? (
-              <div className="flex">
-                <input
-                  type="email"
-                  value={searchEmail}
-                  onChange={(e) => setSearchEmail(e.target.value)}
-                  className={`flex-grow px-3 py-2 text-sm border rounded-l-lg focus:outline-none ${
-                    theme === "dark" ? "bg-gray-700 border-gray-600 text-white" : ""
-                  }`}
-                  placeholder="Enter email to chat"
-                />
-                <button
-                  onClick={handleSearchUser}
-                  className="px-3 py-2 bg-purple-600 text-white rounded-r-lg"
-                >
-                  Chat
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowSearch(true)}
-                className="flex items-center justify-center w-full py-2 px-3 text-sm rounded-lg border border-dashed bg-transparent"
-              >
-                <Mail size={16} className="mr-2" />
-                <span>New conversation</span>
-              </button>
-            )}
-          </div>
-          
-          {/* Contacts list */}
-          <div className="overflow-y-auto h-[calc(600px-128px)]">
-            {contacts.length > 0 ? (
-              contacts.map((contact) => (
-                <div
-                  key={contact.id}
-                  onClick={() => openChat(contact)}
-                  className={`p-3 border-b flex items-center cursor-pointer hover:bg-gray-100 ${
-                    activeChat && activeChat.chatId === contact.chatId
-                      ? theme === "dark" ? "bg-gray-700" : "bg-purple-50"
-                      : ""
-                  } ${
-                    theme === "dark" 
-                      ? "border-gray-700 hover:bg-gray-700 text-gray-200" 
-                      : "border-gray-100"
-                  }`}
-                >
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-400 to-pink-500 flex items-center justify-center text-white font-bold mr-3">
-                    {contact.displayName ? contact.displayName.charAt(0).toUpperCase() : "U"}
-                  </div>
-                  <div>
-                    <div className="font-medium">{contact.displayName}</div>
-                    <div className="text-xs text-gray-500">
-                      {formatTime(contact.timestamp)}
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="p-4 text-center text-gray-500 text-sm">
-                No conversations yet. Search for a user by email to start chatting.
-              </div>
-            )}
+          <div className="flex items-center space-x-2">
+            <button onClick={() => { setShowRequests(true); setShowSidebar(true); }} className="relative p-2">
+              <Users size={20} />
+              {requestsList.length > 0 && (
+                <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full text-xs flex items-center justify-center">
+                  {requestsList.length}
+                </span>
+              )}
+            </button>
+            <button onClick={toggleDarkMode} className="p-2">
+              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
           </div>
         </div>
         
+        {/* Sidebar */}
+        {(showSidebar || window.innerWidth >= 768) && (
+          <div className={`md:w-1/3 w-full border-r ${
+            theme === "dark" ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"
+          }`}>
+            {/* User profile */}
+            <div className={`p-4 border-b flex justify-between items-center ${
+              theme === "dark" ? "border-gray-700" : "border-gray-200"
+            } mt-12 md:mt-0`}>
+              <div className="flex items-center space-x-2">
+                <UserCircle size={24} className="text-purple-500" />
+                <span className="font-medium truncate">{displayName || user.email}</span>
+              </div>
+              <div className="flex space-x-2">
+                <button 
+                  onClick={() => { loadUsers(); setShowUsersList(true); setShowRequests(false); }}
+                  className="p-2 rounded-full"
+                >
+                  <Users size={20} />
+                </button>
+                <button 
+                  onClick={() => { setShowRequests(true); setShowUsersList(false); }}
+                  className="relative p-2 rounded-full"
+                >
+                  <Users size={20} />
+                  {requestsList.length > 0 && (
+                    <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full text-xs flex items-center justify-center">
+                      {requestsList.length}
+                    </span>
+                  )}
+                </button>
+                <button onClick={handleLogout} className="p-2 rounded-full">
+                  <LogOut size={20} />
+                </button>
+              </div>
+            </div>
+            
+            {/* Users list */}
+            {showUsersList && (
+              <div className="overflow-y-auto h-[calc(100vh-132px)] md:h-[calc(100%-64px)]">
+                <div className="p-3 border-b flex justify-between items-center">
+                  <h2 className="font-semibold">All Users</h2>
+                  <button 
+                    onClick={() => setShowUsersList(false)}
+                    className="p-1 text-sm"
+                  >
+                    Close
+                  </button>
+                </div>
+                
+                {usersList.length > 0 ? (
+                  usersList.map((user) => (
+                    <div key={user.id} className={`p-3 border-b flex justify-between items-center ${
+                      theme === "dark" ? "border-gray-700" : "border-gray-200"
+                    }`}>
+                      <div className="flex items-center">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-400 to-pink-500 flex items-center justify-center text-white font-bold mr-3">
+                          {user.displayName.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="font-medium">{user.displayName}</div>
+                          <div className="text-xs text-gray-500">{user.email}</div>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => sendFriendRequest(user.id)}
+                        className="px-3 py-1 bg-purple-600 text-white text-sm rounded"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-4 text-center text-gray-500">
+                    No users found
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Requests list */}
+            {showRequests && (
+              <div className="overflow-y-auto h-[calc(100vh-132px)] md:h-[calc(100%-64px)]">
+                <div className="p-3 border-b flex justify-between items-center">
+                  <h2 className="font-semibold">Friend Requests</h2>
+                  <button 
+                    onClick={() => setShowRequests(false)}
+                    className="p-1 text-sm"
+                  >
+                    Close
+                  </button>
+                </div>
+                
+                {requestsList.length > 0 ? (
+                  requestsList.map((request) => (
+                    <div key={request.id} className={`p-3 border-b ${
+                      theme === "dark" ? "border-gray-700" : "border-gray-200"
+                    }`}>
+                      <div className="flex items-center mb-2">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-400 to-pink-500 flex items-center justify-center text-white font-bold mr-3">
+                          {request.senderName.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="font-medium">{request.senderName}</div>
+                          <div className="text-xs text-gray-500">{request.senderEmail}</div>
+                        </div>
+                      </div>
+                      <div className="flex space-x-2">
+                        <button 
+                          onClick={() => handleRequestResponse(request.id, true)}
+                          className="flex-1 py-1 bg-green-600 text-white rounded flex items-center justify-center"
+                        >
+                          <Check size={16} className="mr-1" />
+                          Accept
+                        </button>
+                        <button 
+                          onClick={() => handleRequestResponse(request.id, false)}
+                          className="flex-1 py-1 bg-red-600 text-white rounded flex items-center justify-center"
+                        >
+                          <X size={16} className="mr-1" />
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-4 text-center text-gray-500">
+                    No pending requests
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Contacts list */}
+            {!showUsersList && !showRequests && (
+              <div className="overflow-y-auto h-[calc(100vh-132px)] md:h-[calc(100%-64px)]">
+                <div className="p-3 border-b">
+                  <h2 className="font-semibold">Conversations</h2>
+                </div>
+                
+                {contacts.length > 0 ? (
+                  contacts.map((contact) => (
+                    <div
+                      key={contact.id}
+                      onClick={() => openChat(contact)}
+                      className={`p-3 border-b flex items-center cursor-pointer ${
+                        activeChat && activeChat.chatId === contact.chatId
+                          ? theme === "dark" ? "bg-gray-700" : "bg-purple-50"
+                          : ""
+                      } ${
+                        theme === "dark" 
+                          ? "border-gray-700 hover:bg-gray-700" 
+                          : "border-gray-200 hover:bg-gray-100"
+                      }`}
+                    >
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-400 to-pink-500 flex items-center justify-center text-white font-bold mr-3">
+                        {contact.displayName.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-grow min-w-0">
+                        <div className="font-medium">{contact.displayName}</div>
+                        {contact.lastMessage && (
+                          <div className="text-xs text-gray-500 truncate">{contact.lastMessage}</div>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500 ml-2">
+                        {formatTime(contact.timestamp)}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-4 text-center text-gray-500">
+                    No conversations yet. Find users to start chatting.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        
         {/* Chat area */}
-        <div className={`w-2/3 flex flex-col ${
-          theme === "dark" ? "bg-gray-800 text-white" : "bg-white"
-        }`}>
+        <div className={`hidden md:flex md:w-2/3 w-full flex-col ${
+          theme === "dark" ? "bg-gray-800" : "bg-white"
+        } ${(showSidebar && window.innerWidth < 768) ? "hidden" : "flex"}`}>
           {activeChat ? (
             <>
               {/* Chat header */}
@@ -514,7 +679,7 @@ const App = () => {
                 <textarea
                   rows="1"
                   placeholder="Type your message..."
-                  className={`flex-grow px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none ${
+                  className={`flex-grow px-3 py-2 border rounded-lg resize-none ${
                     theme === "dark" ? "bg-gray-700 border-gray-600 text-white" : ""
                   }`}
                   value={message}
@@ -539,20 +704,14 @@ const App = () => {
               <MessageCircle size={64} className="text-purple-500 mb-4 opacity-50" />
               <h3 className="text-xl font-medium mb-2">Select a conversation</h3>
               <p className={theme === "dark" ? "text-gray-400" : "text-gray-500"}>
-                Or start a new one by searching for a user
+                Or find users to start chatting
               </p>
             </div>
           )}
         </div>
-      </div>
-      
-      {/* Error notification */}
-      {errorMsg && (
-        <div className="fixed top-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg">
-          {errorMsg}
         </div>
-      )}
-    </div>
+        </div>
+        
   );
 };
 
